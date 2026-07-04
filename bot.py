@@ -13,7 +13,29 @@ from discord import app_commands
 from config import Config, load_config
 from docker_control import ContainerState, DockerControl
 from minecraft import MinecraftClient
-from flavor import format_player_report
+from flavor import (
+    CMD_BOOT_DESC,
+    CMD_PLAYERS_DESC,
+    CMD_STATUS_DESC,
+    CMD_STOP_DESC,
+    EMBED_FIELD_PLAYERS,
+    format_player_report,
+    msg_boot_already_online,
+    msg_boot_already_running,
+    msg_boot_denied,
+    msg_boot_ready,
+    msg_boot_start_failed,
+    msg_boot_starting,
+    msg_boot_timeout,
+    msg_no_players,
+    msg_players_error,
+    msg_players_roster,
+    msg_server_down,
+    msg_stop_already_stopped,
+    msg_stop_denied,
+    msg_stop_failed,
+    msg_stop_success,
+)
 from status_embed import build_status_embed
 
 logging.basicConfig(
@@ -50,33 +72,27 @@ class GTNHBot(discord.Client):
             self._purge_task = asyncio.create_task(self._channel_purge_loop())
 
     def _register_commands(self) -> None:
-        @self.tree.command(name="status", description="Show current GTNH server status")
+        @self.tree.command(name="status", description=CMD_STATUS_DESC)
         async def status(interaction: discord.Interaction) -> None:
             await interaction.response.defer(thinking=True)
             embed = await self._gather_status_embed()
             await interaction.followup.send(embed=embed)
 
-        @self.tree.command(name="players", description="List online players")
+        @self.tree.command(name="players", description=CMD_PLAYERS_DESC)
         async def players(interaction: discord.Interaction) -> None:
             await interaction.response.defer(thinking=True)
             compose = await self.docker.get_status()
             if compose.state != ContainerState.RUNNING:
-                await interaction.followup.send(
-                    "The Eye closes. Barad-dûr sleeps in silence — the server is down."
-                )
+                await interaction.followup.send(msg_server_down())
                 return
 
             player_list = await self.minecraft.get_online_players()
             if player_list.error and not player_list.names:
-                await interaction.followup.send(
-                    f"The furnace flickers. Their names are lost to shadow: {player_list.error}"
-                )
+                await interaction.followup.send(msg_players_error(player_list.error))
                 return
 
             if player_list.count == 0 or not player_list.names:
-                await interaction.followup.send(
-                    "The lands of Mordor lie empty. None dare tread Middle-GregTech."
-                )
+                await interaction.followup.send(msg_no_players())
                 return
 
             roster = format_player_report(
@@ -85,16 +101,13 @@ class GTNHBot(discord.Client):
                 player_list.names,
             )
             await interaction.followup.send(
-                f"**{player_list.count}/{player_list.max_players}** servants labor in the darkness:\n{roster}"
+                msg_players_roster(player_list.count, player_list.max_players, roster)
             )
 
-        @self.tree.command(name="boot", description="Start the GTNH server container (admin only)")
+        @self.tree.command(name="boot", description=CMD_BOOT_DESC)
         async def boot(interaction: discord.Interaction) -> None:
             if not await self._is_admin(interaction):
-                await interaction.response.send_message(
-                    "You dare command the Dark Lord's forge? Begone, halfling.",
-                    ephemeral=True,
-                )
+                await interaction.response.send_message(msg_boot_denied(), ephemeral=True)
                 return
 
             await interaction.response.defer(thinking=True)
@@ -105,9 +118,7 @@ class GTNHBot(discord.Client):
                 ContainerState.RUNNING,
                 ContainerState.STARTING,
             ):
-                await interaction.followup.send(
-                    "The Black Gate already stands open, fool. The server is online."
-                )
+                await interaction.followup.send(msg_boot_already_online())
                 return
 
             if compose.state in (ContainerState.RUNNING, ContainerState.STARTING):
@@ -123,39 +134,30 @@ class GTNHBot(discord.Client):
             logger.info("Boot requested by user %s (%s)", interaction.user, interaction.user.id)
             ok, message = await self.docker.start()
             if not ok:
-                await interaction.followup.send(
-                    f"The flames of Mount Doom sputter. The server rejects your will: {message}"
-                )
+                await interaction.followup.send(msg_boot_start_failed(message))
                 return
 
             await self._finish_boot_wait(interaction, already_running=False)
 
-        @self.tree.command(name="stop", description="Stop the GTNH server container (admin only)")
+        @self.tree.command(name="stop", description=CMD_STOP_DESC)
         async def stop(interaction: discord.Interaction) -> None:
             if not await self._is_admin(interaction):
-                await interaction.response.send_message(
-                    "Only the Dark Lord may quench the forges. You are not worthy.",
-                    ephemeral=True,
-                )
+                await interaction.response.send_message(msg_stop_denied(), ephemeral=True)
                 return
 
             await interaction.response.defer(thinking=True)
             compose = await self.docker.get_status()
             if compose.state == ContainerState.STOPPED:
-                await interaction.followup.send(
-                    "Barad-dûr is already ash. There is nothing left to extinguish."
-                )
+                await interaction.followup.send(msg_stop_already_stopped())
                 return
 
             logger.info("Stop requested by user %s (%s)", interaction.user, interaction.user.id)
             ok, message = await self.docker.stop()
             if not ok:
-                await interaction.followup.send(
-                    f"Even the Dark Lord cannot halt the machine: {message}"
-                )
+                await interaction.followup.send(msg_stop_failed(message))
                 return
 
-            await interaction.followup.send("Let the forges cool. The server returns to shadow.")
+            await interaction.followup.send(msg_stop_success())
             await self._update_status_message()
 
     async def _is_admin(self, interaction: discord.Interaction) -> bool:
@@ -214,7 +216,7 @@ class GTNHBot(discord.Client):
             avoid_roster=self._last_embed_roster,
         )
         for field in embed.fields:
-            if field.name == "Servants in Mordor":
+            if field.name == EMBED_FIELD_PLAYERS:
                 self._last_embed_roster = field.value
                 break
         return embed
@@ -226,26 +228,15 @@ class GTNHBot(discord.Client):
         already_running: bool,
     ) -> None:
         if already_running:
-            await interaction.followup.send(
-                "The furnaces of Barad-dûr already burn. The Eye has not yet opened — "
-                "GregTech loads at its own pace."
-            )
+            await interaction.followup.send(msg_boot_already_running())
         else:
-            await interaction.followup.send(
-                "The furnaces of Barad-dûr ignite... Patience, mortal. "
-                "GregTech loads at its own pace."
-            )
+            await interaction.followup.send(msg_boot_starting())
 
         ready = await self._wait_for_ping(self.config.boot_timeout_seconds)
         if ready:
-            await interaction.followup.send(
-                "Rise. The Eye opens. The server breathes once more."
-            )
+            await interaction.followup.send(msg_boot_ready())
         else:
-            await interaction.followup.send(
-                "The container stirs, yet the world remains blind. "
-                "The mods still slumber in darkness — give it more time."
-            )
+            await interaction.followup.send(msg_boot_timeout())
 
         await self._update_status_message()
 

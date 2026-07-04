@@ -7,21 +7,22 @@ from datetime import datetime, timezone
 import discord
 
 from docker_control import ContainerState, ComposeStatus
-from flavor import format_player_report
+from flavor import (
+    EMBED_FIELD_CONTAINER,
+    EMBED_FIELD_LATENCY,
+    EMBED_FIELD_MOTD,
+    EMBED_FIELD_PLAYERS,
+    EMBED_FIELD_SERVER,
+    EMBED_FIELD_VERSION,
+    EMBED_TITLE,
+    EMPTY_PLAYERS,
+    PLAYERS_UNKNOWN,
+    container_label,
+    embed_description,
+    format_player_report,
+    game_label,
+)
 from minecraft import PingStatus, PlayerList
-
-
-def _container_label(state: ContainerState) -> str:
-    return {
-        ContainerState.RUNNING: "The furnaces burn",
-        ContainerState.STOPPED: "Barad-dûr sleeps",
-        ContainerState.STARTING: "The Eye stirs",
-        ContainerState.UNKNOWN: "Shrouded in shadow",
-    }[state]
-
-
-def _game_label(online: bool) -> str:
-    return "The Eye is open" if online else "The Eye is closed"
 
 
 def _players_text(
@@ -46,9 +47,9 @@ def _players_text(
         return format_player_report(count, max_players, ping.player_names, avoid=avoid_roster)
 
     if ping.online and ping.player_count == 0:
-        return "None dare tread Middle-GregTech"
+        return EMPTY_PLAYERS
 
-    return "The eye reveals nothing"
+    return PLAYERS_UNKNOWN
 
 
 def build_status_embed(
@@ -64,39 +65,36 @@ def build_status_embed(
     color = discord.Color.dark_red() if online else discord.Color.dark_grey()
 
     embed = discord.Embed(
-        title="👁 The Eye Upon GregTech: New Horizons",
-        description=(
-            "One modpack to rule them all, and in the darkness bind them.\n"
-            f"**Road to Mordor:** `{mc_hostname}`"
-        ),
+        title=EMBED_TITLE,
+        description=embed_description(mc_hostname),
         color=color,
         timestamp=datetime.now(timezone.utc),
     )
 
     embed.add_field(
-        name="Barad-dûr (Container)",
-        value=_container_label(compose.state),
+        name=EMBED_FIELD_CONTAINER,
+        value=container_label(compose.state.value),
         inline=True,
     )
     embed.add_field(
-        name="The Great Eye (Server)",
-        value=_game_label(ping.online),
+        name=EMBED_FIELD_SERVER,
+        value=game_label(ping.online),
         inline=True,
     )
     embed.add_field(
-        name="Servants in Mordor",
+        name=EMBED_FIELD_PLAYERS,
         value=_players_text(players, ping, avoid_roster=avoid_roster),
         inline=False,
     )
 
     if ping.motd:
-        embed.add_field(name="Words Upon the Gate", value=ping.motd[:1024], inline=False)
+        embed.add_field(name=EMBED_FIELD_MOTD, value=ping.motd[:1024], inline=False)
 
     stats: list[tuple[str, str]] = []
     if ping.latency_ms is not None:
-        stats.append(("Delay", f"{ping.latency_ms:.0f} ms"))
+        stats.append((EMBED_FIELD_LATENCY, f"{ping.latency_ms:.0f} ms"))
     if ping.version:
-        stats.append(("Age of the World", ping.version))
+        stats.append((EMBED_FIELD_VERSION, ping.version))
 
     for index, (name, value) in enumerate(stats):
         embed.add_field(name=name, value=value, inline=len(stats) > 1)
