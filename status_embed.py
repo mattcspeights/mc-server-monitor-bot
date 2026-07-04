@@ -56,7 +56,7 @@ def build_status_embed(
     ping: PingStatus,
     players: PlayerList | None,
     *,
-    server_hostname: str,
+    mc_hostname: str,
     server_port: int,
     avoid_roster: str | None = None,
 ) -> discord.Embed:
@@ -67,7 +67,7 @@ def build_status_embed(
         title="👁 The Eye Upon GregTech: New Horizons",
         description=(
             "One modpack to rule them all, and in the darkness bind them.\n"
-            f"**Road to Mordor:** `{server_hostname}`"
+            f"**Road to Mordor:** `{mc_hostname}`"
         ),
         color=color,
         timestamp=datetime.now(timezone.utc),

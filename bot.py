@@ -209,7 +209,7 @@ class GTNHBot(discord.Client):
             compose,
             ping,
             players,
-            server_hostname=self.config.server_hostname,
+            mc_hostname=self.config.mc_hostname,
             server_port=self.config.mc_port,
             avoid_roster=self._last_embed_roster,
         )

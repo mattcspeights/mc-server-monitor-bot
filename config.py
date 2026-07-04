@@ -20,7 +20,7 @@ class Config:
     refresh_interval_seconds: int
     mc_host: str
     mc_port: int
-    server_hostname: str
+    mc_hostname: str
     compose_dir: Path
     compose_service: str
     boot_timeout_seconds: int
@@ -42,10 +42,6 @@ def load_config() -> Config:
     boot_role_raw = os.getenv("BOOT_ROLE_ID", "").strip()
     boot_role_id = int(boot_role_raw) if boot_role_raw else None
 
-    server_hostname = os.getenv("SERVER_HOSTNAME", "").strip()
-    if not server_hostname:
-        server_hostname = os.getenv("MC_HOSTNAME", "minecraft.example.com").strip()
-
     return Config(
         discord_token=token,
         status_channel_id=status_channel_id,
@@ -53,7 +49,7 @@ def load_config() -> Config:
         refresh_interval_seconds=int(os.getenv("REFRESH_INTERVAL_SECONDS", "180")),
         mc_host=os.getenv("MC_HOST", "127.0.0.1"),
         mc_port=int(os.getenv("MC_PORT", "25565")),
-        server_hostname=server_hostname,
+        mc_hostname=os.getenv("MC_HOSTNAME", "minecraft.example.com").strip(),
         compose_dir=Path(os.getenv("COMPOSE_DIR", str(_DEFAULT_COMPOSE_DIR))),
         compose_service=os.getenv("COMPOSE_SERVICE", "mc"),
         boot_timeout_seconds=int(os.getenv("BOOT_TIMEOUT_SECONDS", "900")),

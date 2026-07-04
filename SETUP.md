@@ -176,6 +176,6 @@ You do **not** need to restart for Minecraft server start/stop — the bot polls
 
 See `.env.example` for all options. Secrets (`DISCORD_TOKEN`) must never be committed to git.
 
-`SERVER_HOSTNAME` is the public address shown in the status embed. The legacy name `MC_HOSTNAME` is still accepted if set instead.
+`MC_HOSTNAME` is the public address shown in the status embed.
 
 RCON is accessed via `docker compose exec -T mc rcon-cli list` inside the container, so you do not need to expose port 25575 or put the RCON password in the bot `.env`.
