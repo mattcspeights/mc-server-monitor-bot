@@ -8,8 +8,9 @@ import random
 
 CMD_STATUS_DESC = "Show current GTNH server status"
 CMD_PLAYERS_DESC = "List online players"
-CMD_BOOT_DESC = "Start the GTNH server container (admin only)"
+CMD_BOOT_DESC = "Start the GTNH server container"
 CMD_STOP_DESC = "Stop the GTNH server container (admin only)"
+CMD_WHITELIST_DESC = "Add a Minecraft player to the server whitelist"
 
 # --- Status embed ---
 
@@ -124,10 +125,6 @@ def msg_players_roster(count: int, max_players: int, roster: str) -> str:
 
 # --- /boot command ---
 
-def msg_boot_denied() -> str:
-    return "You dare command the Dark Lord's forge? Begone, halfling."
-
-
 def msg_boot_already_online() -> str:
     return "The Black Gate already stands open, fool. The server is online."
 
@@ -177,3 +174,33 @@ def msg_stop_failed(message: str) -> str:
 
 def msg_stop_success() -> str:
     return "Let the forges cool. The server returns to shadow."
+
+
+# --- /whitelist command ---
+
+def msg_whitelist_server_down() -> str:
+    return "Barad-dûr sleeps. No name may be written upon the Gate while the server is down."
+
+
+def msg_whitelist_invalid_username(username: str) -> str:
+    return (
+        f"**{username}** is no true name. Minecraft usernames are 3–16 letters, numbers, or underscores."
+    )
+
+
+def msg_whitelist_success(username: str) -> str:
+    return f"**{username}** is inscribed upon the Gate. They may now enter Mordor."
+
+
+def msg_whitelist_already(username: str) -> str:
+    return f"**{username}** already bears the mark of the Gate. They need not be written twice."
+
+
+def msg_whitelist_failed(error: str) -> str:
+    return f"The Gate rejects the inscription: {error}"
+
+
+def msg_whitelist_rejected(username: str) -> str:
+    return (
+        f"**{username}** SHALL NOT PASS!"
+    )

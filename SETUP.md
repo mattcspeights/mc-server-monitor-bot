@@ -13,7 +13,7 @@
    - Enable **View Channel**, **Send Messages**, **Embed Links**, **Read Message History**
    - Enable **Manage Messages** if you use channel purge (see `CHANNEL_PURGE_INTERVAL_SECONDS`)
    - If the channel is in a category, repeat for the **category** if needed
-7. Optionally create an admin role and set `BOOT_ROLE_ID` (administrator permission also works)
+7. Optionally create an admin role and set `ADMIN_ROLE_ID` (administrator permission also works)
 
 ## 2. Install dependencies
 
@@ -167,7 +167,7 @@ You do **not** need to restart for Minecraft server start/stop — the bot polls
 |---------|----------------|
 | `inactive` or `failed` | `journalctl --user -u gtnh-discord-bot -n 50` |
 | Bot offline in Discord | `systemctl --user status gtnh-discord-bot` |
-| `/boot` permission denied | Discord admin / owner / `BOOT_ROLE_ID` |
+| `/boot` permission denied | Discord admin / owner / `ADMIN_ROLE_ID` |
 | Missing Access on channel | Bot channel permissions (View Channel, etc.) |
 | Purge not working | Bot needs **Manage Messages** on the status channel |
 | Two bots running | Stop manual runs: `pkill -f ".venv/bin/python bot.py"` then restart the service |

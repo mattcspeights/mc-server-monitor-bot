@@ -12,17 +12,17 @@ from discord import app_commands
 
 from config import Config, load_config
 from docker_control import ContainerState, DockerControl
-from minecraft import MinecraftClient
+from minecraft import MinecraftClient, is_valid_mc_username, parse_whitelist_rejection
 from flavor import (
     CMD_BOOT_DESC,
     CMD_PLAYERS_DESC,
     CMD_STATUS_DESC,
     CMD_STOP_DESC,
+    CMD_WHITELIST_DESC,
     EMBED_FIELD_PLAYERS,
     format_player_report,
     msg_boot_already_online,
     msg_boot_already_running,
-    msg_boot_denied,
     msg_boot_ready,
     msg_boot_start_failed,
     msg_boot_starting,
@@ -35,6 +35,12 @@ from flavor import (
     msg_stop_denied,
     msg_stop_failed,
     msg_stop_success,
+    msg_whitelist_already,
+    msg_whitelist_failed,
+    msg_whitelist_invalid_username,
+    msg_whitelist_rejected,
+    msg_whitelist_server_down,
+    msg_whitelist_success,
 )
 from status_embed import build_status_embed
 
@@ -60,16 +66,48 @@ class GTNHBot(discord.Client):
         )
         self._refresh_task: asyncio.Task[None] | None = None
         self._purge_task: asyncio.Task[None] | None = None
+        self._whitelist_log_task: asyncio.Task[None] | None = None
         self._logged_channel_access_error = False
         self._logged_purge_permission_error = False
         self._last_embed_roster: str | None = None
 
     async def setup_hook(self) -> None:
         self._register_commands()
-        await self.tree.sync()
+        await self._sync_commands()
         self._refresh_task = asyncio.create_task(self._status_refresh_loop())
         if self.config.channel_purge_interval_seconds > 0:
             self._purge_task = asyncio.create_task(self._channel_purge_loop())
+        self._whitelist_log_task = asyncio.create_task(self._whitelist_rejection_loop())
+
+    async def _sync_commands(self) -> None:
+        try:
+            channel = await self.fetch_channel(self.config.status_channel_id)
+        except discord.HTTPException:
+            logger.exception("Could not fetch status channel for guild command sync")
+            channel = None
+
+        if isinstance(channel, discord.TextChannel):
+            guild = channel.guild
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            logger.info(
+                "Synced %s slash command(s) to guild %s (%s): %s",
+                len(synced),
+                guild.name,
+                guild.id,
+                ", ".join(f"/{cmd.name}" for cmd in synced),
+            )
+            return
+
+        synced = await self.tree.sync()
+        logger.info(
+            "Synced %s global slash command(s): %s",
+            len(synced),
+            ", ".join(f"/{cmd.name}" for cmd in synced),
+        )
+        logger.warning(
+            "Guild command sync unavailable; new commands may take up to an hour to appear"
+        )
 
     def _register_commands(self) -> None:
         @self.tree.command(name="status", description=CMD_STATUS_DESC)
@@ -106,10 +144,6 @@ class GTNHBot(discord.Client):
 
         @self.tree.command(name="boot", description=CMD_BOOT_DESC)
         async def boot(interaction: discord.Interaction) -> None:
-            if not await self._is_admin(interaction):
-                await interaction.response.send_message(msg_boot_denied(), ephemeral=True)
-                return
-
             await interaction.response.defer(thinking=True)
             compose = await self.docker.get_status()
             ping = await self.minecraft.ping()
@@ -160,6 +194,107 @@ class GTNHBot(discord.Client):
             await interaction.followup.send(msg_stop_success())
             await self._update_status_message()
 
+        @self.tree.command(name="whitelist", description=CMD_WHITELIST_DESC)
+        @app_commands.describe(username="Minecraft username to add to the whitelist")
+        async def whitelist(
+            interaction: discord.Interaction,
+            username: str,
+        ) -> None:
+            player = username.strip()
+            if not is_valid_mc_username(player):
+                await interaction.response.send_message(
+                    msg_whitelist_invalid_username(username),
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer(thinking=True)
+            compose = await self.docker.get_status()
+            if compose.state != ContainerState.RUNNING:
+                await interaction.followup.send(msg_whitelist_server_down())
+                return
+
+            logger.info(
+                "Whitelist add requested by user %s (%s) for %s",
+                interaction.user,
+                interaction.user.id,
+                player,
+            )
+            result = await self.minecraft.whitelist_add(player)
+            if not result.ok:
+                await interaction.followup.send(msg_whitelist_failed(result.error or result.output))
+                return
+
+            output_lower = result.output.lower()
+            if "already" in output_lower and "white" in output_lower:
+                await interaction.followup.send(msg_whitelist_already(player))
+                return
+
+            await interaction.followup.send(msg_whitelist_success(player))
+
+    async def _whitelist_rejection_loop(self) -> None:
+        await self.wait_until_ready()
+        while not self.is_closed():
+            try:
+                await self._tail_whitelist_rejections()
+            except Exception:
+                logger.exception("Whitelist log monitor failed")
+            if not self.is_closed():
+                await asyncio.sleep(30)
+
+    async def _tail_whitelist_rejections(self) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "compose",
+            "logs",
+            "-f",
+            "--tail",
+            "0",
+            self.config.compose_service,
+            cwd=self.config.compose_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        recent: dict[str, float] = {}
+        dedupe_seconds = 300
+
+        while not self.is_closed():
+            line_bytes = await proc.stdout.readline()
+            if not line_bytes:
+                if proc.returncode is not None:
+                    break
+                await asyncio.sleep(0.1)
+                continue
+
+            player = parse_whitelist_rejection(line_bytes.decode(errors="replace"))
+            if player is None:
+                continue
+
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            key = player.lower()
+            last = recent.get(key)
+            if last is not None and now - last < dedupe_seconds:
+                continue
+            recent[key] = now
+
+            logger.info("Whitelist rejection detected for %s", player)
+            channel = await self._get_status_channel()
+            if channel is None:
+                continue
+            try:
+                await channel.send(msg_whitelist_rejected(player))
+            except discord.HTTPException:
+                logger.exception("Failed to announce whitelist rejection for %s", player)
+
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+
     async def _is_admin(self, interaction: discord.Interaction) -> bool:
         if interaction.guild is None or interaction.user is None:
             logger.info("Permission denied: command used outside a server")
@@ -176,16 +311,16 @@ class GTNHBot(discord.Client):
             return True
 
         role_ids = self._interaction_role_ids(interaction)
-        if self.config.boot_role_id and self.config.boot_role_id in role_ids:
+        if self.config.ADMIN_ROLE_ID and self.config.ADMIN_ROLE_ID in role_ids:
             return True
 
         logger.info(
-            "Permission denied for %s (%s): roles=%s boot_role_id=%s "
+            "Permission denied for %s (%s): roles=%s ADMIN_ROLE_ID=%s "
             "interaction_admin=%s guild_owner_id=%s",
             interaction.user.display_name,
             user_id,
             role_ids,
-            self.config.boot_role_id,
+            self.config.ADMIN_ROLE_ID,
             interaction.permissions.administrator,
             interaction.guild.owner_id,
         )

@@ -19,6 +19,30 @@ _PLAYER_LIST_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MC_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,16}$")
+
+_WHITELIST_REJECT_RES: tuple[re.Pattern[str], ...] = (
+    # Modern Paper/Spigot: GameProfile with name=Username
+    re.compile(
+        r"name=(?P<player>[A-Za-z0-9_]{3,16}).*not white-?listed",
+        re.IGNORECASE,
+    ),
+    # Legacy: username before IP parens
+    re.compile(
+        r"(?P<player>[A-Za-z0-9_]{3,16})\s*\([^)]*\)\s*lost connection:\s*"
+        r"You are not white-?listed",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"Disconnecting\s+(?P<player>[A-Za-z0-9_]{3,16}):\s*You are not white-?listed",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"GameProfile@[^\]]+\[(?P<player>[A-Za-z0-9_]{3,16})\].*not white-?listed",
+        re.IGNORECASE,
+    ),
+)
+
 
 @dataclass(frozen=True)
 class PingStatus:
@@ -39,6 +63,25 @@ class PlayerList:
     names: list[str]
     source: str
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class RconResult:
+    ok: bool
+    output: str
+    error: str | None = None
+
+
+def is_valid_mc_username(username: str) -> bool:
+    return bool(_MC_USERNAME_RE.match(username))
+
+
+def parse_whitelist_rejection(line: str) -> str | None:
+    for pattern in _WHITELIST_REJECT_RES:
+        match = pattern.search(line)
+        if match:
+            return match.group("player")
+    return None
 
 
 class MinecraftClient:
@@ -78,7 +121,7 @@ class MinecraftClient:
             logger.debug("mcstatus ping failed: %s", exc)
             return PingStatus(online=False, error=str(exc))
 
-    async def list_players(self) -> PlayerList:
+    async def run_rcon(self, *args: str, timeout: float = 15.0) -> RconResult:
         proc = await asyncio.create_subprocess_exec(
             "docker",
             "compose",
@@ -86,23 +129,33 @@ class MinecraftClient:
             "-T",
             self.compose_service,
             "rcon-cli",
-            "list",
+            *args,
             cwd=self.compose_dir,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
-            return PlayerList(0, 0, [], "rcon", "RCON timed out")
+            return RconResult(False, "", "RCON timed out")
 
         output = stdout.decode().strip()
         err = stderr.decode().strip()
         if proc.returncode != 0:
-            return PlayerList(0, 0, [], "rcon", err or output or "RCON failed")
+            return RconResult(False, output, err or output or "RCON failed")
+        return RconResult(True, output)
 
+    async def whitelist_add(self, username: str) -> RconResult:
+        return await self.run_rcon("whitelist", "add", username)
+
+    async def list_players(self) -> PlayerList:
+        result = await self.run_rcon("list")
+        if not result.ok:
+            return PlayerList(0, 0, [], "rcon", result.error or result.output or "RCON failed")
+
+        output = result.output
         match = _PLAYER_LIST_RE.match(output)
         if not match:
             return PlayerList(0, 0, [], "rcon", f"Unexpected RCON output: {output}")

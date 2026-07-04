@@ -18,6 +18,6 @@ If a bot token is exposed, reset it immediately in the [Discord Developer Portal
 
 ## Permissions
 
-Users with Discord administrator permission, the server owner, or the role set in `BOOT_ROLE_ID` can start and stop the Minecraft container via `/boot` and `/stop`. Only grant `BOOT_ROLE_ID` to trusted operators.
+Users with Discord administrator permission, the server owner, or the role set in `ADMIN_ROLE_ID` can stop the Minecraft container via `/stop`. Only grant `ADMIN_ROLE_ID` to trusted operators.
 
 The bot needs Docker access on the host to run those commands. Run it as a user in the `docker` group only on machines you control.

@@ -16,7 +16,7 @@ _DEFAULT_COMPOSE_DIR = _BOT_DIR.parent
 class Config:
     discord_token: str
     status_channel_id: int
-    boot_role_id: int | None
+    ADMIN_ROLE_ID: int | None
     refresh_interval_seconds: int
     mc_host: str
     mc_port: int
@@ -39,13 +39,13 @@ def load_config() -> Config:
     if status_channel_id <= 0:
         raise ValueError("STATUS_CHANNEL_ID is required in .env")
 
-    boot_role_raw = os.getenv("BOOT_ROLE_ID", "").strip()
-    boot_role_id = int(boot_role_raw) if boot_role_raw else None
+    boot_role_raw = os.getenv("ADMIN_ROLE_ID", "").strip()
+    ADMIN_ROLE_ID = int(boot_role_raw) if boot_role_raw else None
 
     return Config(
         discord_token=token,
         status_channel_id=status_channel_id,
-        boot_role_id=boot_role_id,
+        ADMIN_ROLE_ID=ADMIN_ROLE_ID,
         refresh_interval_seconds=int(os.getenv("REFRESH_INTERVAL_SECONDS", "180")),
         mc_host=os.getenv("MC_HOST", "127.0.0.1"),
         mc_port=int(os.getenv("MC_PORT", "25565")),
