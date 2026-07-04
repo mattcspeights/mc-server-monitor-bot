@@ -1,0 +1,24 @@
+[Unit]
+Description=GTNH Discord Bot
+Documentation=file://@BOT_DIR@/SETUP.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+SupplementaryGroups=docker
+WorkingDirectory=@BOT_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@BOT_DIR@/.venv/bin/python bot.py
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gtnh-discord-bot
+
+[Install]
+WantedBy=multi-user.target
