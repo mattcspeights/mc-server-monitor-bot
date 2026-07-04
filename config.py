@@ -33,28 +33,32 @@ def load_config() -> Config:
 
     token = os.getenv("DISCORD_TOKEN", "").strip()
     if not token:
-        raise ValueError("DISCORD_TOKEN is required in discord-bot/.env")
+        raise ValueError("DISCORD_TOKEN is required in .env")
 
     status_channel_id = int(os.getenv("STATUS_CHANNEL_ID", "0"))
     if status_channel_id <= 0:
-        raise ValueError("STATUS_CHANNEL_ID is required in discord-bot/.env")
+        raise ValueError("STATUS_CHANNEL_ID is required in .env")
 
     boot_role_raw = os.getenv("BOOT_ROLE_ID", "").strip()
     boot_role_id = int(boot_role_raw) if boot_role_raw else None
+
+    server_hostname = os.getenv("SERVER_HOSTNAME", "").strip()
+    if not server_hostname:
+        server_hostname = os.getenv("MC_HOSTNAME", "minecraft.example.com").strip()
 
     return Config(
         discord_token=token,
         status_channel_id=status_channel_id,
         boot_role_id=boot_role_id,
-        refresh_interval_seconds=int(os.getenv("REFRESH_INTERVAL_SECONDS", "60")),
+        refresh_interval_seconds=int(os.getenv("REFRESH_INTERVAL_SECONDS", "180")),
         mc_host=os.getenv("MC_HOST", "127.0.0.1"),
         mc_port=int(os.getenv("MC_PORT", "25565")),
-        server_hostname=os.getenv("MC_HOSTNAME", "www.google.com"),
+        server_hostname=server_hostname,
         compose_dir=Path(os.getenv("COMPOSE_DIR", str(_DEFAULT_COMPOSE_DIR))),
         compose_service=os.getenv("COMPOSE_SERVICE", "mc"),
         boot_timeout_seconds=int(os.getenv("BOOT_TIMEOUT_SECONDS", "900")),
         channel_purge_interval_seconds=int(
-            os.getenv("CHANNEL_PURGE_INTERVAL_SECONDS", "1800")
+            os.getenv("CHANNEL_PURGE_INTERVAL_SECONDS", "3600")
         ),
         state_file=_BOT_DIR / "status_state.json",
     )

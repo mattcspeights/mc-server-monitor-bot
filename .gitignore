@@ -8,6 +8,3 @@ nohup.out
 # Generated locally by install-systemd*.sh (contain machine-specific paths)
 gtnh-discord-bot.service
 gtnh-discord-bot.user.service
-
-gtnh-discord-bot.service
-gtnh-discord-bot.user.service
