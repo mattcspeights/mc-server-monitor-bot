@@ -99,13 +99,26 @@ class GTNHBot(discord.Client):
 
             await interaction.response.defer(thinking=True)
             compose = await self.docker.get_status()
-            if compose.state == ContainerState.RUNNING:
-                ping = await self.minecraft.ping()
-                if ping.online:
-                    await interaction.followup.send(
-                        "The Black Gate already stands open, fool. The server is online."
-                    )
-                    return
+            ping = await self.minecraft.ping()
+
+            if ping.online and compose.state in (
+                ContainerState.RUNNING,
+                ContainerState.STARTING,
+            ):
+                await interaction.followup.send(
+                    "The Black Gate already stands open, fool. The server is online."
+                )
+                return
+
+            if compose.state in (ContainerState.RUNNING, ContainerState.STARTING):
+                logger.info(
+                    "Boot requested by user %s (%s) but container already %s",
+                    interaction.user,
+                    interaction.user.id,
+                    compose.state.value,
+                )
+                await self._finish_boot_wait(interaction, already_running=True)
+                return
 
             logger.info("Boot requested by user %s (%s)", interaction.user, interaction.user.id)
             ok, message = await self.docker.start()
@@ -115,23 +128,7 @@ class GTNHBot(discord.Client):
                 )
                 return
 
-            await interaction.followup.send(
-                "The furnaces of Barad-dûr ignite... Patience, mortal. "
-                "GregTech loads at its own pace."
-            )
-
-            ready = await self._wait_for_ping(self.config.boot_timeout_seconds)
-            if ready:
-                await interaction.followup.send(
-                    "Rise. The Eye opens. The server breathes once more."
-                )
-            else:
-                await interaction.followup.send(
-                    "The container stirs, yet the world remains blind. "
-                    "The mods still slumber in darkness — give it more time."
-                )
-
-            await self._update_status_message()
+            await self._finish_boot_wait(interaction, already_running=False)
 
         @self.tree.command(name="stop", description="Stop the GTNH server container (admin only)")
         async def stop(interaction: discord.Interaction) -> None:
@@ -221,6 +218,36 @@ class GTNHBot(discord.Client):
                 self._last_embed_roster = field.value
                 break
         return embed
+
+    async def _finish_boot_wait(
+        self,
+        interaction: discord.Interaction,
+        *,
+        already_running: bool,
+    ) -> None:
+        if already_running:
+            await interaction.followup.send(
+                "The furnaces of Barad-dûr already burn. The Eye has not yet opened — "
+                "GregTech loads at its own pace."
+            )
+        else:
+            await interaction.followup.send(
+                "The furnaces of Barad-dûr ignite... Patience, mortal. "
+                "GregTech loads at its own pace."
+            )
+
+        ready = await self._wait_for_ping(self.config.boot_timeout_seconds)
+        if ready:
+            await interaction.followup.send(
+                "Rise. The Eye opens. The server breathes once more."
+            )
+        else:
+            await interaction.followup.send(
+                "The container stirs, yet the world remains blind. "
+                "The mods still slumber in darkness — give it more time."
+            )
+
+        await self._update_status_message()
 
     async def _wait_for_ping(self, timeout_seconds: int) -> bool:
         loop = asyncio.get_running_loop()
